@@ -1,49 +1,82 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const http = require('http');
+const socketIo = require('socket.io');
 
 const app = express();
-app.use(bodyParser.raw({ type: 'application/octet-stream' }));
+const server = http.createServer(app);
+const io = socketIo(server);
 
-function parseGPSPacket(buffer) {
-  // Basic protocol parsing for Concox JM-VL03
-  const protocolType = buffer.readUInt8(0);
-  const serialNumber = buffer.readUInt16BE(1);
-  
-  const lat = buffer.readFloatBE(7);  // Assuming IEEE 754 float
-  const lon = buffer.readFloatBE(11); // Assuming IEEE 754 float
-  
-  const speed = buffer.readUInt8(15);
-  const direction = buffer.readUInt16BE(16);
-  const timestamp = new Date(); // Current timestamp, replace with parsed time if protocol supports
-  
-  return {
-    protocolType,
-    serialNumber,
-    location: { lat, lon },
-    speed,
-    direction,
-    timestamp
-  };
-}
+const PORT = 3006;
 
+// Middleware para parsear JSON
+app.use(bodyParser.json());
+
+// Último dato de ubicación
+let lastLocationData = null;
+
+// Endpoint para recibir datos del GPS
 app.post('/gps-tracker', (req, res) => {
-  try {
-    const rawData = req.body;
-    console.log(rawData)
-    const trackerData = parseGPSPacket(rawData);
-    
-    console.log('Received GPS Data:', trackerData);
-    
-    // Here you could add database storage, further processing, etc.
-    
-    res.status(200).send('Data Received');
-  } catch (error) {
-    console.error('GPS Parsing Error:', error);
-    res.status(400).send('Invalid Packet');
-  }
+    try {
+        const gpsData = req.body;
+        
+        // Validar datos recibidos (personaliza según tu formato)
+        if (!gpsData.latitude || !gpsData.longitude) {
+            return res.status(400).json({ error: 'Datos de GPS inválidos' });
+        }
+
+        // Almacenar último dato
+        lastLocationData = {
+            ...gpsData,
+            receivedAt: new Date().toISOString()
+        };
+
+        // Emitir datos en tiempo real via Socket.IO
+        io.emit('gpsData', lastLocationData);
+
+        console.log('Datos GPS recibidos:', lastLocationData);
+
+        res.status(200).json({ message: 'Datos recibidos correctamente' });
+    } catch (error) {
+        console.error('Error procesando datos GPS:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
 });
 
-const PORT = process.env.PORT || 3005;
-app.listen(PORT, () => {
-  console.log(`GPS Tracker Endpoint listening on port ${PORT}`);
+// Ruta para obtener la última ubicación
+app.get('/location', (req, res) => {
+    if (lastLocationData) {
+        res.json(lastLocationData);
+    } else {
+        res.status(404).json({ message: 'No hay datos de ubicación disponibles' });
+    }
+});
+
+// Página web simple para mostrar datos
+app.get('/', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>GPS Tracker</title>
+            <script src="/socket.io/socket.io.js"></script>
+        </head>
+        <body>
+            <h1>GPS Tracker Location</h1>
+            <div id="location">Waiting for data...</div>
+            <script>
+                const socket = io();
+                socket.on('gpsData', (data) => {
+                    document.getElementById('location').innerHTML = JSON.stringify(data, null, 2);
+                });
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+// Iniciar servidor
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor corriendo en ${PORT}`);
+    console.log('Endpoint para recibir datos: POST /gps-tracker');
 });

@@ -1,64 +1,79 @@
+const dgram = require('dgram');
 const express = require('express');
-const bodyParser = require('body-parser');
 const http = require('http');
 const socketIo = require('socket.io');
 
+const UDP_PORT = 3006;
+const HTTP_PORT = 3007;
+
+const server = dgram.createSocket('udp4');
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+const httpServer = http.createServer(app);
+const io = socketIo(httpServer);
 
-const PORT = 3006;
-
-// Middleware para parsear JSON
-app.use(bodyParser.json());
-
-// Último dato de ubicación
 let lastLocationData = null;
 
-// Endpoint para recibir datos del GPS
-app.post('/gps-tracker', (req, res) => {
-    try {
-        const gpsData = req.body;
-        
-        // Validar datos recibidos (personaliza según tu formato)
-        if (!gpsData.latitude || !gpsData.longitude) {
-            return res.status(400).json({ error: 'Datos de GPS inválidos' });
-        }
+// Servidor UDP para recibir datos
+server.on('listening', () => {
+    console.log(`Servidor UDP escuchando en el puerto ${UDP_PORT}`);
+});
 
-        // Almacenar último dato
+server.on('message', (msg, rinfo) => {
+    try {
+        // Parsea el mensaje recibido
+        const gpsData = parseUDPMessage(msg);
+        
         lastLocationData = {
             ...gpsData,
+            receivedFrom: rinfo.address,
             receivedAt: new Date().toISOString()
         };
 
-        // Emitir datos en tiempo real via Socket.IO
+        console.log('Datos GPS recibidos por UDP:', lastLocationData);
+        
+        // Emitir por Socket.IO
         io.emit('gpsData', lastLocationData);
-
-        console.log('Datos GPS recibidos:', lastLocationData);
-
-        res.status(200).json({ message: 'Datos recibidos correctamente' });
     } catch (error) {
-        console.error('Error procesando datos GPS:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        console.error('Error procesando mensaje UDP:', error);
     }
 });
 
-// Ruta para obtener la última ubicación
+server.on('error', (err) => {
+    console.error('Error en servidor UDP:', err);
+    server.close();
+});
+
+// Función para parsear mensaje UDP (personalizar según tu formato)
+function parseUDPMessage(msg) {
+    // Ejemplo de parseo de mensaje 
+    // Formato: "lat,lon,speed,timestamp"
+    const msgString = msg.toString();
+    const [latitude, longitude, speed, timestamp] = msgString.split(',');
+    
+    return {
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        speed: parseFloat(speed),
+        timestamp: timestamp || new Date().toISOString()
+    };
+}
+
+// Rutas HTTP
 app.get('/location', (req, res) => {
     if (lastLocationData) {
         res.json(lastLocationData);
     } else {
-        res.status(404).json({ message: 'No hay datos de ubicación disponibles' });
+        res.status(404).json({ message: 'No hay datos de ubicación' });
     }
 });
 
-// Página web simple para mostrar datos
+// Página web para visualización
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>GPS Tracker</title>
+            <title>GPS Tracker UDP</title>
             <script src="/socket.io/socket.io.js"></script>
         </head>
         <body>
@@ -67,7 +82,8 @@ app.get('/', (req, res) => {
             <script>
                 const socket = io();
                 socket.on('gpsData', (data) => {
-                    document.getElementById('location').innerHTML = JSON.stringify(data, null, 2);
+                    document.getElementById('location').innerHTML = 
+                        JSON.stringify(data, null, 2);
                 });
             </script>
         </body>
@@ -75,8 +91,10 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Iniciar servidor
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor corriendo en ${PORT}`);
-    console.log('Endpoint para recibir datos: POST /gps-tracker');
+// Bind UDP server
+server.bind(UDP_PORT);
+
+// Iniciar servidor HTTP
+httpServer.listen(HTTP_PORT, '0.0.0.0', () => {
+    console.log(`Servidor HTTP corriendo en puerto ${HTTP_PORT}`);
 });

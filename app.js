@@ -76,7 +76,7 @@ app.get('/', (req, res) => {
 });
 
 // Iniciar servidor
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '::', () => {
     console.log(`Servidor corriendo en ${PORT}`);
     console.log('Endpoint para recibir datos: POST /gps-tracker');
 });

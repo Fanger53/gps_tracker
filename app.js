@@ -60,6 +60,7 @@ const server = net.createServer((socket) => {
   console.log('GPS Tracker connected');
 
   socket.on('data', (buffer) => {
+    console.log(buffer)
     try {
       const message = parseMessage(buffer);
       if (message) {
@@ -69,6 +70,7 @@ const server = net.createServer((socket) => {
         if (message.type === 'Registration') {
           const response = generateResponse(0x8100, buffer.readUInt16BE(11));
           socket.write(Buffer.concat([Buffer.from([0x7e]), response, Buffer.from([0x7e])]));
+          console.log(response)
         }
       }
     } catch (error) {

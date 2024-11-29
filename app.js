@@ -16,7 +16,7 @@ app.use(bodyParser.json());
 let lastLocationData = null;
 
 // Endpoint para recibir datos del GPS
-app.post('/gps-tracker', (req, res) => {
+app.post('/', (req, res) => {
     try {
         const gpsData = req.body;
         
@@ -53,7 +53,7 @@ app.get('/location', (req, res) => {
 });
 
 // Página web simple para mostrar datos
-app.get('/', (req, res) => {
+app.get('/info', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -78,5 +78,5 @@ app.get('/', (req, res) => {
 // Iniciar servidor
 server.listen(PORT, '::', () => {
     console.log(`Servidor corriendo en ${PORT}`);
-    console.log('Endpoint para recibir datos: POST /gps-tracker');
+    console.log('Endpoint para recibir datos: POST /');
 });

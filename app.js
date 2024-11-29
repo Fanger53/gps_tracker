@@ -10,12 +10,12 @@ function parseMessage(buffer) {
 
   // Extract message ID
   const messageId = buffer.readUInt16BE(1);
-  console.log(buffer.readUInt16BE(2))
-  console.log(buffer.readUInt16BE(3))
   console.log("messageId")
   console.log(messageId)
   // Basic parsing logic based on JT808 protocol
   switch (messageId) {
+    case 0x0100: // Terminal registration
+    return parseRegistration(buffer);
     case 0x0200: // Location report
       return parseLocationReport(buffer);
     case 0x0002: // Heartbeat

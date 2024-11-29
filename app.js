@@ -76,7 +76,7 @@ app.get('/info', (req, res) => {
 });
 
 // Iniciar servidor
-server.listen(PORT, '::', () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor corriendo en ${PORT}`);
     console.log('Endpoint para recibir datos: POST /');
 });

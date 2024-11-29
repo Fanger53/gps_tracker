@@ -10,6 +10,7 @@ function parseMessage(buffer) {
 
   // Extract message ID
   const messageId = buffer.readUInt16BE(1);
+  console.log(buffer)
   console.log("messageId")
   console.log(messageId)
   // Basic parsing logic based on JT808 protocol

@@ -1,82 +1,91 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const http = require('http');
-const socketIo = require('socket.io');
+const net = require('net');
+const crypto = require('crypto');
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+function parseMessage(buffer) {
+  // Validate start/end delimiters
+  if (buffer[0] !== 0x7e || buffer[buffer.length - 1] !== 0x7e) {
+    console.error('Invalid message format');
+    return null;
+  }
 
-const PORT = 3006;
+  // Extract message ID
+  const messageId = buffer.readUInt16BE(1);
+  
+  // Basic parsing logic based on JT808 protocol
+  switch (messageId) {
+    case 0x0100: // Terminal registration
+      return parseRegistration(buffer);
+    case 0x0200: // Location report
+      return parseLocationReport(buffer);
+    case 0x0002: // Heartbeat
+      return { type: 'Heartbeat' };
+    default:
+      console.log(`Unhandled message type: ${messageId.toString(16)}`);
+      return null;
+  }
+}
 
-// Middleware para parsear JSON
-app.use(bodyParser.json());
+function parseRegistration(buffer) {
+  return {
+    type: 'Registration',
+    provinceId: buffer.readUInt16BE(13),
+    cityId: buffer.readUInt16BE(15),
+    manufacturerId: buffer.slice(17, 22).toString('hex'),
+    deviceModel: buffer.slice(22, 30).toString().trim(),
+    deviceId: buffer.slice(30, 37).toString(),
+    licensePlateColor: buffer.readUInt8(37)
+  };
+}
 
-// Último dato de ubicación
-let lastLocationData = null;
+function parseLocationReport(buffer) {
+  // Detailed location parsing (similar to previous example)
+  return {
+    type: 'LocationReport',
+    latitude: buffer.readUInt32BE(8) / 1000000,
+    longitude: buffer.readUInt32BE(12) / 1000000,
+    speed: buffer.readUInt16BE(18) / 10
+  };
+}
 
-// Endpoint para recibir datos del GPS
-app.post('/', (req, res) => {
+function generateResponse(messageId, serialNumber, result = 0) {
+  // Generate a basic response packet
+  const response = Buffer.alloc(5);
+  response.writeUInt16BE(serialNumber, 0);
+  response.writeUInt16BE(messageId, 2);
+  response.writeUInt8(result, 4);
+  return response;
+}
+
+const server = net.createServer((socket) => {
+  console.log('GPS Tracker connected');
+
+  socket.on('data', (buffer) => {
     try {
-        const gpsData = req.body;
+      const message = parseMessage(buffer);
+      if (message) {
+        console.log('Received message:', message);
         
-        // Validar datos recibidos (personaliza según tu formato)
-        if (!gpsData.latitude || !gpsData.longitude) {
-            return res.status(400).json({ error: 'Datos de GPS inválidos' });
+        // Send response based on message type
+        if (message.type === 'Registration') {
+          const response = generateResponse(0x8100, buffer.readUInt16BE(11));
+          socket.write(Buffer.concat([Buffer.from([0x7e]), response, Buffer.from([0x7e])]));
         }
-
-        // Almacenar último dato
-        lastLocationData = {
-            ...gpsData,
-            receivedAt: new Date().toISOString()
-        };
-
-        // Emitir datos en tiempo real via Socket.IO
-        io.emit('gpsData', lastLocationData);
-
-        console.log('Datos GPS recibidos:', lastLocationData);
-
-        res.status(200).json({ message: 'Datos recibidos correctamente' });
+      }
     } catch (error) {
-        console.error('Error procesando datos GPS:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
+      console.error('Error processing message:', error);
     }
+  });
+
+  socket.on('close', () => {
+    console.log('GPS Tracker disconnected');
+  });
+
+  socket.on('error', (err) => {
+    console.error('Socket error:', err);
+  });
 });
 
-// Ruta para obtener la última ubicación
-app.get('/location', (req, res) => {
-    if (lastLocationData) {
-        res.json(lastLocationData);
-    } else {
-        res.status(404).json({ message: 'No hay datos de ubicación disponibles' });
-    }
-});
-
-// Página web simple para mostrar datos
-app.get('/info', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>GPS Tracker</title>
-            <script src="/socket.io/socket.io.js"></script>
-        </head>
-        <body>
-            <h1>GPS Tracker Location</h1>
-            <div id="location">Waiting for data...</div>
-            <script>
-                const socket = io();
-                socket.on('gpsData', (data) => {
-                    document.getElementById('location').innerHTML = JSON.stringify(data, null, 2);
-                });
-            </script>
-        </body>
-        </html>
-    `);
-});
-
-// Iniciar servidor
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor corriendo en ${PORT}`);
-    console.log('Endpoint para recibir datos: POST /');
+const PORT = 3003;
+server.listen(PORT, () => {
+  console.log(`JT808 TCP Server listening on port ${PORT}`);
 });
